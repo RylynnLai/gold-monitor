@@ -301,8 +301,12 @@ if result and result.get('type') == 'N_PATTERN_REVERSAL':
 
 **订阅链接：**
 ```
-ql repo https://github.com/RylynnLai/gold-monitor.git "" "" "requirements.txt"
+ql repo https://github.com/RylynnLai/gold-monitor.git "qinglong_run.py" "" "requirements.txt"
 ```
+
+**说明：**
+- 第二个参数 `"qinglong_run.py"` 是白名单，只运行这一个文件作为定时任务
+- 这样可以避免青龙扫描 `src/` 目录下的其他 Python 文件（如 gold_fetcher.py, price_analyzer.py 等）
 
 **定时规则：** `*/5 * * * *`（每5分钟执行一次）
 
