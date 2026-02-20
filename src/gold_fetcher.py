@@ -190,12 +190,12 @@ class GoldPriceFetcher:
             logger.debug(f"获取历史数据失败: {e}，使用当前价格")
             return (fallback_price, fallback_price, fallback_price)
 
-    def get_48h_kline_data(self, period: str = '15') -> Optional[List[Dict]]:
+    def get_48h_kline_data(self, period: str = '5') -> Optional[List[Dict]]:
         """
-        获取48小时的K线数据（192条15分钟K线）
+        获取48小时的K线数据（576条5分钟K线）
 
         Args:
-            period: K线周期 ('15' = 15分钟)
+            period: K线周期 ('5' = 5分钟)
 
         Returns:
             K线数据列表，每条包含 {datetime, open, high, low, close, volume, hold}
@@ -236,8 +236,8 @@ class GoldPriceFetcher:
                 logger.error("K线数据为空")
                 return None
 
-            # 3. 提取最近192条（48小时 = 192个15分钟）
-            n_bars = 192
+            # 3. 提取最近576条（48小时 = 576个5分钟）
+            n_bars = 576
             df_48h = df.tail(n_bars)
 
             # 4. 转换为字典列表

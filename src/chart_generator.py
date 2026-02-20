@@ -235,7 +235,7 @@ class ASCIIChartGenerator:
         # 1. 标题
         start_time = kline_data[0]['datetime']
         end_time = kline_data[-1]['datetime']
-        title = f"黄金15分钟K线图 ({start_time[:16]} 至 {end_time[:16]})"
+        title = f"黄金5分钟K线图 ({start_time[:16]} 至 {end_time[:16]})"
         lines.append(title)
         lines.append(self.chars['line'] * min(len(title), width))
 
@@ -309,10 +309,42 @@ class ASCIIChartGenerator:
         for row in canvas:
             lines.append(''.join(row))
 
-        # 9. 底部信息
+        # 9. 添加底部横坐标轴
+        axis_line = ' ' * x_offset + self.chars['corner_bl'] + self.chars['horizontal'] * (width - x_offset - 1)
+        lines.append(axis_line)
+
+        # 10. 添加时间标签（横坐标）
+        time_labels = [' '] * width
+        # 计算合适的标签数量（避免重叠，每个标签需要至少6个字符宽度）
+        label_width = 6  # "HH:MM" + 空格
+        max_possible_labels = (width - x_offset) // label_width
+        num_labels = min(max_possible_labels, len(sampled_klines), 12)  # 最多12个标签
+
+        if num_labels > 1:
+            label_indices = [int(i * (len(sampled_klines) - 1) / (num_labels - 1)) for i in range(num_labels)]
+        else:
+            label_indices = [0]
+
+        for idx in label_indices:
+            if idx < len(sampled_klines):
+                kline = sampled_klines[idx]
+                # 提取时间标签（时:分）
+                time_str = kline['datetime'][11:16]  # 格式: HH:MM
+                x_pos = x_offset + idx * x_step
+
+                # 确保标签不越界且不重叠
+                if x_pos + len(time_str) <= width:
+                    # 检查该位置是否已被占用
+                    can_place = all(time_labels[x_pos + i] == ' ' for i in range(len(time_str)) if x_pos + i < width)
+                    if can_place:
+                        for i, char in enumerate(time_str):
+                            if x_pos + i < width:
+                                time_labels[x_pos + i] = char
+
+        lines.append(''.join(time_labels))
+
+        # 11. 底部信息
         lines.append(self.chars['line'] * width)
-        time_label = f"时间轴: {sampled_klines[0]['datetime'][:10]} → {sampled_klines[-1]['datetime'][:10]}"
-        lines.append(time_label)
         stats = f"最高: {price_max:.2f}  最低: {price_min:.2f}  振幅: {price_range:.2f}  K线数: {len(kline_data)}"
         lines.append(stats)
 
