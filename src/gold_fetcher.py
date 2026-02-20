@@ -1,5 +1,6 @@
 import logging
 import time
+import requests
 from datetime import datetime
 from typing import Optional, Dict, List
 
@@ -7,56 +8,24 @@ logger = logging.getLogger(__name__)
 
 
 class GoldPriceFetcher:
-    """黄金价格获取器（使用 AKShare）"""
+    """黄金价格获取器（使用 Twelve Data API - XAU/USD 现货）"""
 
     def __init__(self):
-        # 使用 AKShare 获取黄金现货价格
-        # AU9999 是上海黄金交易所的现货黄金代码
-        self.symbol = "Au99.99"  # AKShare 中的品种代码
+        # 使用 Twelve Data API 获取黄金现货价格 XAU/USD
+        self.api_key = "9fe93e2197664306a03d90d4d859f26f"
+        self.symbol = "XAU/USD"  # 黄金现货美元价格
+        self.base_url = "https://api.twelvedata.com"
         self.max_retries = 3  # 最大重试次数
         self.retry_delay = 2  # 重试延迟（秒）
 
-    def get_main_contract_code(self) -> str:
-        """
-        动态获取黄金期货主力合约代码
-
-        Returns:
-            主力合约代码，如 'au2604'
-        """
-        try:
-            # 简化实现：根据当前月份推算主力合约
-            # 黄金期货主力合约通常是偶数月：2, 4, 6, 8, 10, 12月
-            now = datetime.now()
-            year = now.year % 100  # 两位年份
-            month = now.month
-
-            # 找到下一个偶数月
-            if month % 2 == 0:
-                contract_month = month if now.day < 15 else month + 2
-            else:
-                contract_month = month + 1
-
-            if contract_month > 12:
-                contract_month = contract_month - 12
-                year = year + 1
-
-            symbol = f"au{year:02d}{contract_month:02d}"
-            logger.debug(f"计算得到主力合约: {symbol}")
-
-            return symbol
-
-        except Exception as e:
-            logger.warning(f"动态获取合约失败: {e}，使用默认值")
-            return "au2604"  # 降级返回默认值
-
     def get_current_price(self) -> Optional[Dict[str, any]]:
         """
-        获取当前黄金价格（使用 AKShare，带重试机制）
+        获取当前黄金价格（使用 Twelve Data API，带重试机制）
 
         Returns:
             包含价格信息的字典，如果失败则返回 None
             {
-                'price': float,  # 当前价格（元/克）
+                'price': float,  # 当前价格（美元/盎司）
                 'change': float,  # 涨跌额
                 'change_percent': float,  # 涨跌幅
                 'timestamp': str,  # 时间戳
@@ -64,7 +33,7 @@ class GoldPriceFetcher:
                 'open': float,  # 今开
                 'high': float,  # 最高
                 'low': float,  # 最低
-                'volume': float  # 成交量
+                'volume': float  # 成交量（XAU/USD 无成交量）
             }
         """
         # 带重试的获取价格
@@ -89,42 +58,40 @@ class GoldPriceFetcher:
     def _fetch_price(self) -> Optional[Dict[str, any]]:
         """内部方法：执行单次价格获取"""
         try:
-            import akshare as ak
-            import json
+            logger.debug(f"正在获取 {self.symbol} 实时行情...")
 
-            # 方法1：获取实时行情（最新价格）
-            logger.debug("正在获取上海黄金交易所实时行情...")
+            # 获取当前价格
+            price_url = f"{self.base_url}/price"
+            params = {
+                'symbol': self.symbol,
+                'apikey': self.api_key
+            }
 
-            try:
-                quotations_df = ak.spot_quotations_sge()
-            except json.JSONDecodeError as e:
-                logger.error(f"JSON 解析错误: {e}")
-                logger.error("可能是网络问题或 API 返回了非 JSON 数据")
-                raise
-            except Exception as e:
-                logger.error(f"获取实时行情失败: {e}")
-                raise
+            response = requests.get(price_url, params=params, timeout=10)
+            response.raise_for_status()
+            price_data = response.json()
 
-            # 检查数据框是否为空
-            if quotations_df is None or quotations_df.empty:
-                logger.error("实时行情数据为空")
+            if 'price' not in price_data:
+                logger.error(f"API返回异常: {price_data}")
                 return None
 
-            # 筛选 AU9999 数据
-            au9999_data = quotations_df[quotations_df['品种'] == self.symbol]
+            current_price = float(price_data['price'])
 
-            if au9999_data.empty:
-                logger.error(f"未找到 {self.symbol} 数据")
-                logger.debug(f"可用品种: {quotations_df['品种'].unique().tolist()}")
-                return None
+            # 获取今日的开高低收数据（使用1天的时间序列）
+            quote_url = f"{self.base_url}/quote"
+            quote_params = {
+                'symbol': self.symbol,
+                'apikey': self.api_key
+            }
 
-            latest_quote = au9999_data.iloc[-1]
-            current_price = float(latest_quote['现价'])
+            quote_response = requests.get(quote_url, params=quote_params, timeout=10)
+            quote_response.raise_for_status()
+            quote_data = quote_response.json()
 
-            logger.debug(f"获取到实时价格: {current_price} 元/克")
-
-            # 方法2：尝试获取历史数据（开盘价、最高最低价）
-            open_price, high_price, low_price = self._fetch_historical_data(current_price)
+            # 提取数据
+            open_price = float(quote_data.get('open', current_price))
+            high_price = float(quote_data.get('high', current_price))
+            low_price = float(quote_data.get('low', current_price))
 
             # 计算涨跌额和涨跌幅
             change = current_price - open_price
@@ -135,70 +102,34 @@ class GoldPriceFetcher:
                 'change': change,  # 涨跌额
                 'change_percent': change_percent,  # 涨跌幅
                 'timestamp': datetime.now().isoformat(),
-                'name': 'AU9999',
+                'name': 'XAU/USD',  # 黄金现货
                 'open': open_price,  # 今开
                 'high': high_price,  # 最高
                 'low': low_price,  # 最低
-                'volume': 0,  # 成交量（AKShare 未提供）
+                'volume': 0,  # XAU/USD 无成交量概念
             }
 
-            logger.info(f"成功获取黄金价格: {result['price']:.2f} 元/克 (AKShare)")
-            logger.debug(f"价格详情: 开{open_price:.2f} 高{high_price:.2f} 低{low_price:.2f}")
+            logger.info(f"成功获取黄金价格: ${result['price']:.2f}/oz (Twelve Data)")
+            logger.debug(f"价格详情: 开${open_price:.2f} 高${high_price:.2f} 低${low_price:.2f}")
 
             return result
 
-        except ImportError:
-            logger.error("AKShare 库未安装，请运行: pip install akshare")
-            return None
+        except requests.exceptions.RequestException as e:
+            logger.error(f"API请求失败: {e}")
+            raise
         except Exception as e:
             # 这里会重新抛出异常，让外层的重试机制捕获
             raise
 
-    def _fetch_historical_data(self, fallback_price: float) -> tuple:
+    def get_48h_kline_data(self, period: str = '5min') -> Optional[List[Dict]]:
         """
-        获取历史数据（开盘价、最高最低价）
+        获取K线数据
 
         Args:
-            fallback_price: 降级使用的价格（当历史数据不可用时）
+            period: K线周期，支持 '1min', '5min', '15min', '30min', '1h', '1day' 等
 
         Returns:
-            (open_price, high_price, low_price)
-        """
-        try:
-            import akshare as ak
-
-            logger.debug("尝试获取历史数据...")
-            hist_df = ak.spot_hist_sge(symbol="AU9999")
-
-            if not hist_df.empty:
-                # 获取最新一天的数据
-                latest_hist = hist_df.iloc[-1]
-
-                # 检查数据是否有效（不为0）
-                if latest_hist['open'] > 0:
-                    open_price = float(latest_hist['open'])
-                    high_price = float(latest_hist['high'])
-                    low_price = float(latest_hist['low'])
-                    logger.debug(f"历史数据有效: 开{open_price} 高{high_price} 低{low_price}")
-                    return (open_price, high_price, low_price)
-
-            # 历史数据无效或为空，使用降级价格
-            logger.debug("历史数据无效，使用当前价格作为降级")
-            return (fallback_price, fallback_price, fallback_price)
-
-        except Exception as e:
-            logger.debug(f"获取历史数据失败: {e}，使用当前价格")
-            return (fallback_price, fallback_price, fallback_price)
-
-    def get_48h_kline_data(self, period: str = '5') -> Optional[List[Dict]]:
-        """
-        获取48小时的K线数据（576条5分钟K线）
-
-        Args:
-            period: K线周期 ('5' = 5分钟)
-
-        Returns:
-            K线数据列表，每条包含 {datetime, open, high, low, close, volume, hold}
+            K线数据列表，每条包含 {datetime, open, high, low, close, volume}
             如果失败返回 None
         """
         for attempt in range(self.max_retries):
@@ -222,61 +153,115 @@ class GoldPriceFetcher:
     def _fetch_kline_data(self, period: str) -> Optional[List[Dict]]:
         """内部方法：执行单次K线数据获取"""
         try:
-            import akshare as ak
+            logger.info(f"正在获取 {self.symbol} 的 {period} K线数据...")
 
-            # 1. 获取当前主力合约代码
-            symbol = self.get_main_contract_code()
+            # 映射周期格式（Twelve Data 使用 5min 而不是 5）
+            interval_map = {
+                '1': '1min',
+                '5': '5min',
+                '15': '15min',
+                '30': '30min',
+                '60': '1h',
+            }
+            interval = interval_map.get(period, period)
 
-            logger.info(f"正在获取黄金期货 {symbol} 的{period}分钟K线数据...")
+            # 计算需要获取的数据量（48小时）
+            bars_per_hour = {
+                '1min': 60,
+                '5min': 12,
+                '15min': 4,
+                '30min': 2,
+                '1h': 1,
+            }
+            output_size = bars_per_hour.get(interval, 12) * 48  # 48小时
 
-            # 2. 获取K线数据
-            df = ak.futures_zh_minute_sina(symbol=symbol, period=period)
+            url = f"{self.base_url}/time_series"
+            params = {
+                'symbol': self.symbol,
+                'interval': interval,
+                'outputsize': min(output_size, 5000),  # API限制
+                'apikey': self.api_key
+            }
 
-            if df is None or df.empty:
-                logger.error("K线数据为空")
+            response = requests.get(url, params=params, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+
+            if 'values' not in data:
+                logger.error(f"API返回异常: {data}")
                 return None
 
-            # 3. 提取最近576条（48小时 = 576个5分钟）
-            n_bars = 576
-            df_48h = df.tail(n_bars)
-
-            # 4. 转换为字典列表
+            # 转换为K线数据格式
             kline_data = []
-            for _, row in df_48h.iterrows():
+            for item in reversed(data['values']):  # 反转使其按时间正序
                 kline_data.append({
-                    'datetime': str(row['datetime']),
-                    'open': float(row['open']),
-                    'high': float(row['high']),
-                    'low': float(row['low']),
-                    'close': float(row['close']),
-                    'volume': int(row.get('volume', 0)),
-                    'hold': int(row.get('hold', 0))
+                    'datetime': item['datetime'],
+                    'open': float(item['open']),
+                    'high': float(item['high']),
+                    'low': float(item['low']),
+                    'close': float(item['close']),
+                    'volume': 0,  # XAU/USD 无成交量
                 })
 
             logger.info(f"成功获取 {len(kline_data)} 条K线数据")
-            logger.debug(f"时间范围: {kline_data[0]['datetime']} 至 {kline_data[-1]['datetime']}")
-            logger.debug(f"价格范围: {min(k['low'] for k in kline_data):.2f} - {max(k['high'] for k in kline_data):.2f}")
+            if kline_data:
+                logger.debug(f"时间范围: {kline_data[0]['datetime']} 至 {kline_data[-1]['datetime']}")
+                logger.debug(f"价格范围: ${min(k['low'] for k in kline_data):.2f} - ${max(k['high'] for k in kline_data):.2f}")
 
             return kline_data
 
-        except ImportError:
-            logger.error("AKShare 库未安装")
-            return None
+        except requests.exceptions.RequestException as e:
+            logger.error(f"API请求失败: {e}")
+            raise
         except Exception as e:
             # 这里会重新抛出异常，让外层的重试机制捕获
             raise
 
 
-def test_fether():
+def test_fetcher():
     """测试函数"""
     fetcher = GoldPriceFetcher()
+
+    print("=" * 70)
+    print("测试黄金现货价格获取（Twelve Data - XAU/USD）")
+    print("=" * 70)
+
+    # 测试获取当前价格
+    print("\n1. 获取当前价格:")
     price_info = fetcher.get_current_price()
     if price_info:
-        print(f"当前价格: {price_info['price']} 元/克")
-        print(f"涨跌额: {price_info['change']} 元")
-        print(f"涨跌幅: {price_info['change_percent']}%")
+        print(f"   当前价格: ${price_info['price']:.2f}/oz")
+        print(f"   涨跌额: ${price_info['change']:.2f}")
+        print(f"   涨跌幅: {price_info['change_percent']:.2f}%")
+        print(f"   今开: ${price_info['open']:.2f}")
+        print(f"   最高: ${price_info['high']:.2f}")
+        print(f"   最低: ${price_info['low']:.2f}")
     else:
-        print("获取价格失败")
+        print("   ❌ 获取价格失败")
+
+    # 测试获取K线数据
+    print("\n2. 获取5分钟K线数据:")
+    kline_data = fetcher.get_48h_kline_data('5min')
+    if kline_data:
+        print(f"   ✓ 获取到 {len(kline_data)} 条K线")
+        print(f"   时间范围: {kline_data[0]['datetime']} 至 {kline_data[-1]['datetime']}")
+        print(f"\n   最新K线:")
+        latest = kline_data[-1]
+        print(f"   时间: {latest['datetime']}")
+        print(f"   开: ${latest['open']:.2f}")
+        print(f"   高: ${latest['high']:.2f}")
+        print(f"   低: ${latest['low']:.2f}")
+        print(f"   收: ${latest['close']:.2f}")
+    else:
+        print("   ❌ 获取K线失败")
+
+    print("\n" + "=" * 70)
+    print("说明:")
+    print("- 数据源: Twelve Data API")
+    print("- 品种: XAU/USD（黄金现货美元价格）")
+    print("- 更新: 实时（1分钟级别）")
+    print("- 限制: 800次/天（免费账户）")
+    print("=" * 70)
 
 
 if __name__ == '__main__':
