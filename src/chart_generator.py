@@ -2,6 +2,12 @@ import logging
 from typing import List, Dict
 from datetime import datetime
 
+# 支持两种导入方式：相对导入（模块运行）和绝对导入（直接运行）
+try:
+    from . import config
+except ImportError:
+    import config
+
 logger = logging.getLogger(__name__)
 
 
@@ -232,10 +238,22 @@ class ASCIIChartGenerator:
 
         lines = []
 
-        # 1. 标题
+        # 1. 标题（使用配置的K线周期）
         start_time = kline_data[0]['datetime']
         end_time = kline_data[-1]['datetime']
-        title = f"黄金5分钟K线图 ({start_time[:16]} 至 {end_time[:16]})"
+
+        # 周期名称映射
+        period_names = {
+            '1min': '1分钟',
+            '5min': '5分钟',
+            '15min': '15分钟',
+            '30min': '30分钟',
+            '1h': '1小时',
+            '1day': '日线'
+        }
+        period_name = period_names.get(config.KLINE_PERIOD, config.KLINE_PERIOD)
+
+        title = f"黄金{period_name}K线图 ({start_time[:16]} 至 {end_time[:16]})"
         lines.append(title)
         lines.append(self.chars['line'] * min(len(title), width))
 
@@ -253,12 +271,23 @@ class ASCIIChartGenerator:
         def price_to_y(price):
             return int(height - 1 - (price - price_min) / price_range * (height - 1))
 
-        # 4. 采样K线（根据宽度）
+        # 4. 采样K线（确保显示所有KLINE_HOURS内的数据）
         n_klines = len(kline_data)
         x_offset = 10  # 左侧留出价格刻度空间
         available_width = width - x_offset - 2
-        sample_step = max(1, n_klines // available_width)
-        sampled_klines = kline_data[::sample_step]
+
+        # 智能采样：尽量显示所有数据，但避免过度拥挤
+        # 每根K线至少需要2个字符宽度（一根影线+实体）
+        max_displayable_klines = available_width // 2
+
+        if n_klines <= max_displayable_klines:
+            # 数据量适中，显示所有K线
+            sampled_klines = kline_data
+            sample_step = 1
+        else:
+            # 数据量过大，需要采样
+            sample_step = max(1, n_klines // max_displayable_klines)
+            sampled_klines = kline_data[::sample_step]
 
         # 5. 创建画布
         canvas = [[' ' for _ in range(width)] for _ in range(height)]
@@ -345,7 +374,10 @@ class ASCIIChartGenerator:
 
         # 11. 底部信息
         lines.append(self.chars['line'] * width)
-        stats = f"最高: {price_max:.2f}  最低: {price_min:.2f}  振幅: {price_range:.2f}  K线数: {len(kline_data)}"
+        if sample_step > 1:
+            stats = f"最高: {price_max:.2f}  最低: {price_min:.2f}  振幅: {price_range:.2f}  总K线数: {len(kline_data)}  显示: {len(sampled_klines)} (采样间隔: {sample_step})"
+        else:
+            stats = f"最高: {price_max:.2f}  最低: {price_min:.2f}  振幅: {price_range:.2f}  K线数: {len(kline_data)}"
         lines.append(stats)
 
         return '\n'.join(lines)

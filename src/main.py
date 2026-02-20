@@ -152,9 +152,9 @@ class GoldMonitor:
         self.logger.info("=" * 50)
 
         try:
-            # 1. 获取48小时K线数据（192条15分钟K线）
-            self.logger.info("正在获取48小时K线数据...")
-            kline_data = self.fetcher.get_48h_kline_data(period='15')
+            # 1. 获取K线数据（使用配置的周期和时长）
+            self.logger.info(f"正在获取K线数据（周期: {config.KLINE_PERIOD}, 时长: {config.KLINE_HOURS}小时）...")
+            kline_data = self.fetcher.get_48h_kline_data()  # 使用配置的默认值
 
             if not kline_data:
                 self.logger.warning("获取K线数据失败")
