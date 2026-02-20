@@ -42,15 +42,17 @@
 - 分支：`main`
 - 定时类型：`crontab`
 - 定时规则：`*/15 * * * *`（每15分钟执行一次）
-- 白名单：`qinglong_run.py`
+- 白名单：留空（拉取整个项目）
 - 黑名单：留空
 - 依赖文件：`requirements.txt`
 
-**方法 B：直接导入订阅链接**
+**方法 B：直接导入订阅链接（推荐）**
 
 ```
-ql repo https://github.com/RylynnLai/gold-monitor.git "qinglong_run" "" "requirements.txt"
+ql repo https://github.com/RylynnLai/gold-monitor.git "" "" "requirements.txt"
 ```
+
+**注意：** 白名单和黑名单都留空（两个 ""），这样会拉取整个项目代码，包括 src 目录下的所有文件。
 
 ### 2. 配置环境变量
 

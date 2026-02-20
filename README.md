@@ -37,7 +37,7 @@ gold-monitor/
 
 **订阅链接：**
 ```
-ql repo https://github.com/RylynnLai/gold-monitor.git "qinglong_run" "" "requirements.txt"
+ql repo https://github.com/RylynnLai/gold-monitor.git "" "" "requirements.txt"
 ```
 
 **定时规则：** `*/15 * * * *`（每15分钟执行一次）
