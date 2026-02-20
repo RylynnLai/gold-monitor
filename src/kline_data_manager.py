@@ -7,8 +7,14 @@ import logging
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 from pathlib import Path
-from .gold_fetcher import GoldPriceFetcher
-from . import config
+
+# 支持两种导入方式：相对导入（模块运行）和绝对导入（直接运行）
+try:
+    from .gold_fetcher import GoldPriceFetcher
+    from . import config
+except ImportError:
+    from gold_fetcher import GoldPriceFetcher
+    import config
 
 logger = logging.getLogger(__name__)
 

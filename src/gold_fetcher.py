@@ -3,7 +3,12 @@ import time
 import requests
 from datetime import datetime
 from typing import Optional, Dict, List
-from . import config
+
+# 支持两种导入方式：相对导入（模块运行）和绝对导入（直接运行）
+try:
+    from . import config
+except ImportError:
+    import config
 
 logger = logging.getLogger(__name__)
 

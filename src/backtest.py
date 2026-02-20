@@ -7,9 +7,16 @@ import logging
 from typing import List, Dict, Optional, Tuple
 from pathlib import Path
 from datetime import datetime
-from .price_analyzer import PriceAnalyzer, NPattern
-from .kline_data_manager import KlineDataManager
-from . import config
+
+# 支持两种导入方式：相对导入（模块运行）和绝对导入（直接运行）
+try:
+    from .price_analyzer import PriceAnalyzer, NPattern
+    from .kline_data_manager import KlineDataManager
+    from . import config
+except ImportError:
+    from price_analyzer import PriceAnalyzer, NPattern
+    from kline_data_manager import KlineDataManager
+    import config
 
 logger = logging.getLogger(__name__)
 

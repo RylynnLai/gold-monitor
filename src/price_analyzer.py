@@ -4,7 +4,12 @@ from pathlib import Path
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 from enum import Enum
-from . import config
+
+# 支持两种导入方式：相对导入（模块运行）和绝对导入（直接运行）
+try:
+    from . import config
+except ImportError:
+    import config
 
 logger = logging.getLogger(__name__)
 
