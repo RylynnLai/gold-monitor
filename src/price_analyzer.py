@@ -413,9 +413,10 @@ class PriceAnalyzer:
         if current_type == previous_type:
             return None
 
-        # 检测幅度阈值
-        if abs(current_pattern['change_percent']) < 0.3:
-            logger.debug(f"形态幅度不足: {current_pattern['change_percent']:.2f}%")
+        # 检测幅度阈值（使用配置的 min_reversal_threshold）
+        min_change_percent = self.min_reversal_threshold * 100  # 转换为百分比
+        if abs(current_pattern['change_percent']) < min_change_percent:
+            logger.debug(f"形态幅度不足: {current_pattern['change_percent']:.2f}% (最小要求: {min_change_percent:.2f}%)")
             return None
 
         # 检测形态强度
