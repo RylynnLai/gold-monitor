@@ -1,0 +1,45 @@
+{
+  "name": "黄金价格监控",
+  "author": "longzhou_l",
+  "repo": "https://github.com/RylynnLai/gold-monitor.git",
+  "branch": "main",
+  "description": "监控现货黄金价格,检测N字形反转信号,通过飞书发送通知",
+  "version": "1.0.0",
+  "schedule": "*/15 * * * *",
+  "tasks": [
+    {
+      "name": "黄金价格监控",
+      "command": "python3 qinglong_run.py",
+      "schedule": "*/15 * * * *"
+    }
+  ],
+  "files": [
+    "src/**/*.py",
+    "qinglong_run.py",
+    "requirements.txt",
+    ".env.example"
+  ],
+  "dependencies": {
+    "python": ">=3.7",
+    "pip": "requirements.txt"
+  },
+  "env": [
+    {
+      "name": "FEISHU_WEBHOOK_URL",
+      "description": "飞书机器人 Webhook URL",
+      "required": true
+    },
+    {
+      "name": "CHECK_INTERVAL",
+      "description": "检查间隔(秒),青龙模式下该配置无效",
+      "default": "300",
+      "required": false
+    },
+    {
+      "name": "LOG_LEVEL",
+      "description": "日志级别 (DEBUG/INFO/WARNING/ERROR)",
+      "default": "INFO",
+      "required": false
+    }
+  ]
+}

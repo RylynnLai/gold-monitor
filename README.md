@@ -29,6 +29,27 @@ gold-monitor/
 └── README.md               # 项目文档
 ```
 
+## 部署方式
+
+### 青龙面板部署（推荐）
+
+如果你使用青龙面板，可以通过订阅功能快速部署：
+
+**订阅链接：**
+```
+ql repo https://github.com/RylynnLai/gold-monitor.git "qinglong_run" "" "requirements.txt"
+```
+
+**定时规则：** `*/15 * * * *`（每15分钟执行一次）
+
+**环境变量配置：**
+- `FEISHU_WEBHOOK_URL`：飞书机器人 Webhook URL（必填）
+- `LOG_LEVEL`：日志级别，默认 INFO（可选）
+
+详细部署指南请查看：**[青龙面板部署指南](QINGLONG_GUIDE.md)**
+
+### 本地部署
+
 ## 快速开始
 
 ### 1. 环境要求
