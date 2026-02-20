@@ -310,13 +310,13 @@ def run_backtest():
     print("\n步骤1: 初始化数据管理器...")
     data_manager = KlineDataManager()
 
-    # 2. 加载或抓取48小时数据
-    print("\n步骤2: 加载48小时K线数据...")
+    # 2. 加载或抓取K线数据（使用配置的周期和时长）
+    print(f"\n步骤2: 加载K线数据（周期: {config.KLINE_PERIOD}, 时长: {config.KLINE_HOURS}小时）...")
     kline_data = data_manager.load_kline_data()
 
     if not kline_data:
         print("  本地无数据，开始抓取...")
-        kline_data = data_manager.fetch_and_save_48h_data('5min')
+        kline_data = data_manager.fetch_and_save_48h_data()  # 使用默认配置参数
 
     if not kline_data:
         print("  ❌ 无法获取K线数据，回测终止")

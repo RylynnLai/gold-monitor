@@ -24,6 +24,10 @@ DATA_DIR = BASE_DIR / 'data'
 PRICE_HISTORY_FILE = DATA_DIR / 'price_history.json'
 KLINE_DATA_FILE = DATA_DIR / 'kline_48h.json'
 
+# K线数据配置
+KLINE_PERIOD = os.getenv('KLINE_PERIOD', '5min')  # K线周期
+KLINE_HOURS = int(os.getenv('KLINE_HOURS', 48))   # K线数据时长（小时）
+
 # 价格分析阈值配置
 MIN_REVERSAL_THRESHOLD = float(os.getenv('MIN_REVERSAL_THRESHOLD', 0.003))
 SWING_WINDOW_SIZE = int(os.getenv('SWING_WINDOW_SIZE', 2))

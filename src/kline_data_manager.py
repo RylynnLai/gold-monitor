@@ -1,6 +1,6 @@
 """
 K线数据管理器
-用于抓取、存储和更新48小时K线数据
+用于抓取、存储和更新K线数据（时长可配置）
 """
 import json
 import logging
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class KlineDataManager:
-    """K线数据管理器（48小时数据）"""
+    """K线数据管理器（支持配置时长和周期）"""
 
     def __init__(self, data_file: Optional[Path] = None):
         """
@@ -25,22 +25,27 @@ class KlineDataManager:
         """
         self.data_file = data_file or config.KLINE_DATA_FILE
         self.fetcher = GoldPriceFetcher()
-        logger.info(f"K线数据管理器初始化完成，数据文件: {self.data_file}")
+        self.period = config.KLINE_PERIOD  # 从配置读取周期
+        self.hours = config.KLINE_HOURS    # 从配置读取时长
+        logger.info(f"K线数据管理器初始化完成 - 周期: {self.period}, 时长: {self.hours}小时, 文件: {self.data_file}")
 
-    def fetch_and_save_48h_data(self, period: str = '5min') -> Optional[List[Dict]]:
+    def fetch_and_save_48h_data(self, period: Optional[str] = None, hours: Optional[int] = None) -> Optional[List[Dict]]:
         """
-        抓取48小时K线数据并保存到本地
+        抓取K线数据并保存到本地
 
         Args:
-            period: K线周期，默认 '5min'
+            period: K线周期，默认使用 config.KLINE_PERIOD
+            hours: 数据时长（小时），默认使用 config.KLINE_HOURS
 
         Returns:
             K线数据列表，失败返回 None
         """
-        logger.info(f"开始抓取48小时K线数据（周期: {period}）...")
+        period = period or self.period
+        hours = hours or self.hours
+        logger.info(f"开始抓取K线数据（周期: {period}, 时长: {hours}小时）...")
 
         # 从API获取数据
-        kline_data = self.fetcher.get_48h_kline_data(period)
+        kline_data = self.fetcher.get_48h_kline_data(period, hours)
 
         if not kline_data:
             logger.error("抓取K线数据失败")
@@ -56,30 +61,33 @@ class KlineDataManager:
             logger.error("保存K线数据失败")
             return None
 
-    def update_48h_data(self, period: str = '5min') -> Optional[List[Dict]]:
+    def update_48h_data(self, period: Optional[str] = None, hours: Optional[int] = None) -> Optional[List[Dict]]:
         """
-        更新本地48小时K线数据
+        更新本地K线数据
 
         流程：
         1. 加载本地数据
         2. 抓取最新数据
         3. 合并数据（去重、排序）
-        4. 保留最近48小时
+        4. 保留最近N小时
         5. 保存更新后的数据
 
         Args:
-            period: K线周期，默认 '5min'
+            period: K线周期，默认使用 config.KLINE_PERIOD
+            hours: 数据时长（小时），默认使用 config.KLINE_HOURS
 
         Returns:
             更新后的K线数据列表，失败返回 None
         """
-        logger.info(f"开始更新48小时K线数据（周期: {period}）...")
+        period = period or self.period
+        hours = hours or self.hours
+        logger.info(f"开始更新K线数据（周期: {period}, 时长: {hours}小时）...")
 
         # 1. 加载本地数据
         local_data = self.load_kline_data()
 
         # 2. 抓取最新数据
-        new_data = self.fetcher.get_48h_kline_data(period)
+        new_data = self.fetcher.get_48h_kline_data(period, hours)
 
         if not new_data:
             logger.error("抓取最新K线数据失败")
@@ -97,9 +105,9 @@ class KlineDataManager:
             merged_data = new_data
             logger.info(f"首次获取，共 {len(merged_data)} 条数据")
 
-        # 4. 保留最近48小时
-        filtered_data = self._filter_48h_data(merged_data)
-        logger.info(f"过滤后保留 {len(filtered_data)} 条（48小时内）")
+        # 4. 保留最近N小时
+        filtered_data = self._filter_48h_data(merged_data, hours)
+        logger.info(f"过滤后保留 {len(filtered_data)} 条（{hours}小时内）")
 
         # 5. 保存更新后的数据
         success = self._save_kline_data(filtered_data, period)
@@ -230,12 +238,13 @@ class KlineDataManager:
 
         return merged_list
 
-    def _filter_48h_data(self, kline_data: List[Dict]) -> List[Dict]:
+    def _filter_48h_data(self, kline_data: List[Dict], hours: int = 48) -> List[Dict]:
         """
-        过滤保留最近48小时的数据
+        过滤保留最近N小时的数据
 
         Args:
             kline_data: K线数据列表
+            hours: 保留的时长（小时）
 
         Returns:
             过滤后的数据列表
@@ -243,8 +252,8 @@ class KlineDataManager:
         if not kline_data:
             return []
 
-        # 计算48小时前的时间
-        cutoff_time = datetime.now() - timedelta(hours=48)
+        # 计算N小时前的时间
+        cutoff_time = datetime.now() - timedelta(hours=hours)
 
         # 过滤数据
         filtered = [

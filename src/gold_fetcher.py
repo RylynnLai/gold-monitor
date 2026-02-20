@@ -3,6 +3,7 @@ import time
 import requests
 from datetime import datetime
 from typing import Optional, Dict, List
+from . import config
 
 logger = logging.getLogger(__name__)
 
@@ -121,24 +122,30 @@ class GoldPriceFetcher:
             # 这里会重新抛出异常，让外层的重试机制捕获
             raise
 
-    def get_48h_kline_data(self, period: str = '5min') -> Optional[List[Dict]]:
+    def get_48h_kline_data(self, period: Optional[str] = None, hours: Optional[int] = None) -> Optional[List[Dict]]:
         """
-        获取K线数据
+        获取K线数据（支持配置周期和时长）
 
         Args:
             period: K线周期，支持 '1min', '5min', '15min', '30min', '1h', '1day' 等
+                   默认从 config.KLINE_PERIOD 读取
+            hours: 数据时长（小时），默认从 config.KLINE_HOURS 读取
 
         Returns:
             K线数据列表，每条包含 {datetime, open, high, low, close, volume}
             如果失败返回 None
         """
+        # 使用配置的默认值
+        period = period or config.KLINE_PERIOD
+        hours = hours or config.KLINE_HOURS
+
         for attempt in range(self.max_retries):
             try:
                 if attempt > 0:
                     logger.info(f"第 {attempt + 1}/{self.max_retries} 次尝试获取K线数据...")
                     time.sleep(self.retry_delay)
 
-                result = self._fetch_kline_data(period)
+                result = self._fetch_kline_data(period, hours)
                 if result:
                     return result
 
@@ -150,10 +157,16 @@ class GoldPriceFetcher:
 
         return None
 
-    def _fetch_kline_data(self, period: str) -> Optional[List[Dict]]:
-        """内部方法：执行单次K线数据获取"""
+    def _fetch_kline_data(self, period: str, hours: int = 48) -> Optional[List[Dict]]:
+        """
+        内部方法：执行单次K线数据获取
+
+        Args:
+            period: K线周期
+            hours: 数据时长（小时）
+        """
         try:
-            logger.info(f"正在获取 {self.symbol} 的 {period} K线数据...")
+            logger.info(f"正在获取 {self.symbol} 的 {period} K线数据（{hours}小时）...")
 
             # 映射周期格式（Twelve Data 使用 5min 而不是 5）
             interval_map = {
@@ -165,7 +178,7 @@ class GoldPriceFetcher:
             }
             interval = interval_map.get(period, period)
 
-            # 计算需要获取的数据量（48小时）
+            # 计算需要获取的数据量（基于小时数）
             bars_per_hour = {
                 '1min': 60,
                 '5min': 12,
@@ -173,7 +186,7 @@ class GoldPriceFetcher:
                 '30min': 2,
                 '1h': 1,
             }
-            output_size = bars_per_hour.get(interval, 12) * 48  # 48小时
+            output_size = bars_per_hour.get(interval, 12) * hours
 
             url = f"{self.base_url}/time_series"
             params = {
