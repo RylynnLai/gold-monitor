@@ -22,6 +22,12 @@ LOG_FILE = LOG_DIR / 'gold_monitor.log'
 # 数据配置
 DATA_DIR = BASE_DIR / 'data'
 PRICE_HISTORY_FILE = DATA_DIR / 'price_history.json'
+KLINE_DATA_FILE = DATA_DIR / 'kline_48h.json'
+
+# 价格分析阈值配置
+MIN_REVERSAL_THRESHOLD = float(os.getenv('MIN_REVERSAL_THRESHOLD', 0.003))
+SWING_WINDOW_SIZE = int(os.getenv('SWING_WINDOW_SIZE', 2))
+MIN_STRENGTH = float(os.getenv('MIN_STRENGTH', 0.5))
 
 # 确保目录存在
 LOG_DIR.mkdir(exist_ok=True)

@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 from enum import Enum
+from . import config
 
 logger = logging.getLogger(__name__)
 
@@ -37,18 +38,21 @@ class PriceAnalyzer:
 
     def __init__(self):
         """
-        初始化分析器（K线模式，不再需要历史数据文件）
+        初始化分析器（K线模式，从config读取阈值参数）
         """
         # N字形分析相关属性
         self.n_pattern_state = NPatternState()
-        self.min_reversal_threshold = 0.003  # 0.3% 阈值
-        self.swing_window_size = 2           # 摇摆点识别窗口
-        self.min_strength = 0.5              # 最小形态强度
+
+        # 从配置文件读取阈值参数
+        self.min_reversal_threshold = config.MIN_REVERSAL_THRESHOLD
+        self.swing_window_size = config.SWING_WINDOW_SIZE
+        self.min_strength = config.MIN_STRENGTH
 
         # 兼容性：保留空的price_history以支持旧的统计方法
         self.price_history = []
 
-        logger.info("价格分析器初始化完成（K线模式）")
+        logger.info(f"价格分析器初始化完成（K线模式）- 阈值: reversal={self.min_reversal_threshold}, "
+                   f"window={self.swing_window_size}, strength={self.min_strength}")
 
     def _load_history(self):
         """从文件加载历史数据"""
