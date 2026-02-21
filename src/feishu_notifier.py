@@ -153,6 +153,106 @@ class FeishuNotifier:
             logger.error(f"发送 Webhook 异常: {e}")
             return False
 
+    def send_trendline_notification(self, analysis_result: Dict,
+                                    price_info: Dict) -> bool:
+        """
+        发送趋势线突破通知
+
+        Args:
+            analysis_result: 趋势线分析结果字典
+            price_info: 当前价格信息
+
+        Returns:
+            发送是否成功
+        """
+        try:
+            reversal_type = analysis_result['reversal_type']
+            from_trend = analysis_result['from_trend']
+            to_trend = analysis_result['to_trend']
+            breakout_price = analysis_result['breakout_price']
+            trendline_value = analysis_result['trendline_value']
+            breakout_percent = analysis_result['breakout_percent']
+            pivot_count = analysis_result['pivot_points_count']
+            confidence = analysis_result['confidence']
+            trigger_time = analysis_result['trigger_time']
+
+            # 图标和颜色
+            emoji = "📈" if '看涨' in reversal_type else "📉"
+            color = "red" if '看涨' in reversal_type else "green"
+
+            # 生成交易建议
+            trading_advice = self._generate_trendline_trading_advice(analysis_result)
+
+            # 构造消息内容（使用文本消息格式，更简洁）
+            content = f"""【{emoji} {reversal_type}】黄金趋势线突破信号
+
+🔄 趋势变化
+  从: {from_trend.value}
+  到: {to_trend.value}
+
+💰 突破信息
+  突破价格: {breakout_price:.2f} 元/克
+  趋势线值: {trendline_value:.2f} 元/克
+  突破幅度: {breakout_percent:.2f}%
+  触发时间: {trigger_time}
+
+📊 信号强度
+  摆动点数: {pivot_count} 个
+  置信度: {confidence:.1%}
+
+📈 当前行情
+  开盘价: {price_info.get('open', 0):.2f} 元/克
+  最高价: {price_info.get('high', 0):.2f} 元/克
+  最低价: {price_info.get('low', 0):.2f} 元/克
+  当前价: {price_info['price']:.2f} 元/克
+  涨跌幅: {price_info.get('change_percent', 0):+.2f}%
+
+💡 交易建议
+  {trading_advice}
+
+⏰ 通知时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+"""
+
+            payload = {
+                "msg_type": "text",
+                "content": {"text": content}
+            }
+
+            return self._send_message(payload)
+
+        except Exception as e:
+            logger.error(f"发送趋势线通知异常: {e}", exc_info=True)
+            return False
+
+    def _generate_trendline_trading_advice(self, analysis_result: Dict) -> str:
+        """
+        生成趋势线交易建议
+
+        Args:
+            analysis_result: 趋势线分析结果
+
+        Returns:
+            交易建议文本
+        """
+        confidence = analysis_result['confidence']
+        reversal_type = analysis_result['reversal_type']
+        breakout_percent = analysis_result['breakout_percent']
+
+        if '看涨' in reversal_type:
+            if confidence >= 0.6 and breakout_percent >= 0.1:
+                return "强烈建议买入 - 趋势线向上突破，信号强烈"
+            elif confidence >= 0.4:
+                return "建议买入 - 趋势线向上突破，可小仓位试探"
+            else:
+                return "谨慎观望 - 反转信号较弱，等待进一步确认"
+        else:  # 看跌
+            if confidence >= 0.6 and breakout_percent >= 0.1:
+                return "强烈建议卖出 - 趋势线向下突破，风险较高"
+            elif confidence >= 0.4:
+                return "建议卖出 - 趋势线向下突破，建议减仓"
+            else:
+                return "谨慎观望 - 反转信号较弱，继续观察"
+
     def send_test_message(self) -> bool:
         """发送测试消息"""
         payload = {

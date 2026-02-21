@@ -26,7 +26,7 @@ from config import (
     BASE_DIR
 )
 from gold_fetcher import GoldPriceFetcher
-from price_analyzer import PriceAnalyzer
+from trendline_analyzer import TrendlineAnalyzer
 from feishu_notifier import FeishuNotifier
 from chart_generator import ASCIIChartGenerator
 from report_generator import ReportGenerator
@@ -39,9 +39,14 @@ class GoldMonitor:
         self.setup_logging()
         self.logger = logging.getLogger(__name__)
 
-        # 初始化各个组件 (K线模式)
+        # 初始化各个组件 (趋势线模式)
         self.fetcher = GoldPriceFetcher()
-        self.analyzer = PriceAnalyzer()  # 不再需要history_file和trend_count
+        self.analyzer = TrendlineAnalyzer(
+            trend_window_hours=config.TREND_WINDOW_HOURS,
+            min_pivot_distance=config.MIN_PIVOT_DISTANCE,
+            breakout_threshold=config.BREAKOUT_THRESHOLD,
+            min_trend_points=2
+        )
         self.notifier = FeishuNotifier(FEISHU_WEBHOOK_URL)
         self.chart_gen = ASCIIChartGenerator(width=60, height=10, use_unicode=True)
         self.report_gen = ReportGenerator()
@@ -50,8 +55,13 @@ class GoldMonitor:
         self.output_dir = BASE_DIR / 'output'
         self.output_dir.mkdir(exist_ok=True)  # 创建输出目录
 
-        self.logger.info("黄金价格监控器初始化完成（K线模式）")
+        self.logger.info("黄金价格监控器初始化完成（趋势线模式）")
         self.logger.info(f"检查间隔: {CHECK_INTERVAL} 秒")
+        self.logger.info(
+            f"趋势线参数: window={config.TREND_WINDOW_HOURS}h, "
+            f"pivot={config.MIN_PIVOT_DISTANCE}, "
+            f"threshold={config.BREAKOUT_THRESHOLD*100:.2f}%"
+        )
 
     def setup_logging(self):
         """配置日志"""
@@ -147,9 +157,9 @@ class GoldMonitor:
             self.logger.error(f"检查价格时发生异常: {e}", exc_info=True)
 
     def run_once(self):
-        """单次运行模式（青龙面板）- 使用K线数据"""
+        """单次运行模式（青龙面板）- 使用趋势线分析"""
         self.logger.info("=" * 50)
-        self.logger.info("执行单次价格检查（K线模式）")
+        self.logger.info("执行单次价格检查（趋势线模式）")
         self.logger.info("=" * 50)
 
         try:
@@ -176,14 +186,14 @@ class GoldMonitor:
                 'timestamp': latest_kline['datetime']
             }
 
-            # 3. 分析K线数据（N字形反转检测）
+            # 3. 分析K线数据（趋势线突破检测）
             analysis_result = self.analyzer.analyze_kline_data(kline_data)
 
             # 4. 生成K线图（ASCII蜡烛图）
             kline_chart = self.chart_gen.generate_kline_chart(kline_data, width=80, height=15)
 
             # 5. 生成综合报告
-            report = self.report_gen.generate_report(price_info, analysis_result, self.analyzer)
+            report = self.report_gen.generate_trendline_report(price_info, analysis_result, self.analyzer)
 
             # 6. 输出到控制台
             self._print_formatted_output(price_info, kline_chart, report)
@@ -191,27 +201,26 @@ class GoldMonitor:
             # 7. 保存到文件
             self._save_to_file(price_info, kline_chart, report)
 
-            # 8. 发送飞书通知（N字形反转时）
-            if analysis_result and analysis_result.get('type') == 'N_PATTERN_REVERSAL':
-                reversal_signal = analysis_result['reversal_signal']
-                self.logger.info(f"检测到{reversal_signal['reversal_type']}反转，准备发送通知")
+            # 8. 发送飞书通知（趋势线突破时）
+            if analysis_result and analysis_result.get('type') == 'TRENDLINE_BREAKOUT':
+                self.logger.info(f"检测到{analysis_result['reversal_type']}，准备发送通知")
 
                 # 检查飞书配置
                 if FEISHU_WEBHOOK_URL:
-                    success = self.notifier.send_reversal_notification(
-                        reversal_signal,
-                        analysis_result
+                    success = self.notifier.send_trendline_notification(
+                        analysis_result,
+                        price_info
                     )
 
                     if success:
                         # 记录反转历史
-                        self._save_reversal_history(reversal_signal)
+                        self._save_reversal_history(analysis_result)
                         self.logger.info(
-                            f"已发送{reversal_signal['reversal_type']}反转通知 "
-                            f"({reversal_signal['from_pattern'].value} → {reversal_signal['to_pattern'].value})"
+                            f"已发送{analysis_result['reversal_type']}通知 "
+                            f"(突破价格: {analysis_result['breakout_price']:.2f})"
                         )
                     else:
-                        self.logger.error("发送飞书反转通知失败")
+                        self.logger.error("发送飞书通知失败")
                 else:
                     self.logger.info("飞书 Webhook 未配置，跳过通知")
 
@@ -234,15 +243,22 @@ class GoldMonitor:
             else:
                 history = []
 
-            # 添加新记录
-            history.append({
+            # 添加新记录（兼容趋势线格式）
+            record = {
                 'time': datetime.now().isoformat(),
                 'type': reversal_signal['reversal_type'],
-                'from': reversal_signal['from_pattern'].value,
-                'to': reversal_signal['to_pattern'].value,
-                'confidence': reversal_signal['confidence'],
-                'trigger_price': reversal_signal['trigger_price']
-            })
+                'trigger_price': reversal_signal['breakout_price'],
+                'confidence': reversal_signal.get('confidence', 0),
+            }
+
+            # 趋势线格式包含额外字段
+            if 'from_trend' in reversal_signal:
+                record['from'] = reversal_signal['from_trend'].value
+                record['to'] = reversal_signal['to_trend'].value
+                record['trendline_value'] = reversal_signal.get('trendline_value', 0)
+                record['breakout_percent'] = reversal_signal.get('breakout_percent', 0)
+
+            history.append(record)
 
             # 保存（只保留最近100条）
             with open(history_file, 'w', encoding='utf-8') as f:

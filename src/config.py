@@ -28,7 +28,13 @@ KLINE_DATA_FILE = DATA_DIR / 'kline_48h.json'
 KLINE_PERIOD = os.getenv('KLINE_PERIOD', '5min')  # K线周期
 KLINE_HOURS = int(os.getenv('KLINE_HOURS', 48))   # K线数据时长（小时）
 
-# 价格分析阈值配置
+# 趋势线反转检测配置
+TREND_WINDOW_HOURS = int(os.getenv('TREND_WINDOW_HOURS', 6))
+MIN_PIVOT_DISTANCE = int(os.getenv('MIN_PIVOT_DISTANCE', 2))
+BREAKOUT_THRESHOLD = float(os.getenv('BREAKOUT_THRESHOLD', 0.0008))
+MIN_COOLDOWN_MINUTES = int(os.getenv('MIN_COOLDOWN_MINUTES', 30))
+
+# N型反转形态识别配置（已停用，保留备用）
 MIN_REVERSAL_THRESHOLD = float(os.getenv('MIN_REVERSAL_THRESHOLD', 0.003))
 SWING_WINDOW_SIZE = int(os.getenv('SWING_WINDOW_SIZE', 2))
 MIN_STRENGTH = float(os.getenv('MIN_STRENGTH', 0.5))

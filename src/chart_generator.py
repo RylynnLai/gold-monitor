@@ -1,6 +1,7 @@
 import logging
 from typing import List, Dict
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 # 支持两种导入方式：相对导入（模块运行）和绝对导入（直接运行）
 try:
@@ -242,6 +243,12 @@ class ASCIIChartGenerator:
         start_time = kline_data[0]['datetime']
         end_time = kline_data[-1]['datetime']
 
+        # 将UTC时间转换为美国东部时间
+        start_dt_utc = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+        end_dt_utc = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+        start_dt_et = start_dt_utc.astimezone(ZoneInfo('America/New_York'))
+        end_dt_et = end_dt_utc.astimezone(ZoneInfo('America/New_York'))
+
         # 周期名称映射
         period_names = {
             '1min': '1分钟',
@@ -253,7 +260,7 @@ class ASCIIChartGenerator:
         }
         period_name = period_names.get(config.KLINE_PERIOD, config.KLINE_PERIOD)
 
-        title = f"黄金{period_name}K线图 ({start_time[:16]} 至 {end_time[:16]})"
+        title = f"黄金{period_name}K线图 ({start_dt_et.strftime('%m-%d %H:%M')} 至 {end_dt_et.strftime('%m-%d %H:%M')} ET)"
         lines.append(title)
         lines.append(self.chars['line'] * min(len(title), width))
 
@@ -277,9 +284,6 @@ class ASCIIChartGenerator:
         available_width = width - x_offset - 2
 
         # 智能采样：根据数据量和图表宽度调整
-        # 对于长时间跨度，每根K线可以用1个字符宽度（只显示竖线）
-        # 对于短时间跨度，每根K线用2-3个字符宽度（显示蜡烛形状）
-
         # 计算时间跨度
         if n_klines >= 2:
             start_dt = datetime.fromisoformat(kline_data[0]['datetime'])
@@ -289,12 +293,14 @@ class ASCIIChartGenerator:
             time_span_hours = 0
 
         # 根据时间跨度决定每根K线的宽度
-        if time_span_hours > 48:  # 超过2天
-            min_kline_width = 1  # 长时间跨度，每根K线1个字符
+        if time_span_hours > 72:  # 超过3天
+            min_kline_width = 1  # 长时间跨度，每根K线1个字符（紧凑显示）
+        elif time_span_hours > 24:  # 1-3天（24-72小时）
+            min_kline_width = 1.2  # 中等时间跨度，稍微紧凑（48小时场景）
         else:
-            min_kline_width = 2  # 短时间跨度，每根K线2个字符
+            min_kline_width = 2  # 短时间跨度（<=24小时），每根K线2个字符
 
-        max_displayable_klines = available_width // min_kline_width
+        max_displayable_klines = int(available_width / min_kline_width)
 
         if n_klines <= max_displayable_klines:
             # 数据量适中，显示所有K线
@@ -309,10 +315,11 @@ class ASCIIChartGenerator:
         canvas = [[' ' for _ in range(width)] for _ in range(height)]
 
         # 6. 绘制K线蜡烛
-        x_step = max(1, available_width // len(sampled_klines))
+        # 确保K线均匀分布在整个宽度上
+        x_step = max(1, (available_width - 1) / max(1, len(sampled_klines) - 1)) if len(sampled_klines) > 1 else available_width
 
         for i, kline in enumerate(sampled_klines):
-            x = x_offset + i * x_step
+            x = x_offset + int(i * x_step)
 
             if x >= width - 1:
                 break
@@ -370,49 +377,68 @@ class ASCIIChartGenerator:
             time_span_hours = 0
 
         # 根据时间跨度选择时间标签格式
-        # 如果跨度 > 24小时，显示月-日；否则显示时:分
-        use_date_format = time_span_hours > 24
-
-        # 计算合适的标签数量
-        if use_date_format:
-            label_width = 7  # "MM-DD " 需要6-7个字符宽度，考虑间隔
+        # 24-72小时：显示"日 时:分"（如"19 08:00"）
+        # >72小时：显示"月-日"（如"02-19"）
+        # <=24小时：显示"时:分"（如"08:00"）
+        if 24 < time_span_hours <= 72:
+            use_date_hour_format = True  # 日期+时间
+            use_date_format = False
+        elif time_span_hours > 72:
+            use_date_format = True  # 仅日期
+            use_date_hour_format = False
         else:
-            label_width = 7  # "HH:MM " 需要6-7个字符宽度
+            use_date_format = False  # 仅时间
+            use_date_hour_format = False
 
-        max_possible_labels = max(4, (width - x_offset) // label_width)  # 至少4个标签
-        num_labels = min(max_possible_labels, len(sampled_klines), 10)  # 最多10个标签
+        # 格式化时间标签（转换为美国东部时间）
+        def format_time_label(kline_datetime):
+            # 将UTC时间转换为美国东部时间
+            dt_utc = datetime.fromisoformat(kline_datetime.replace('Z', '+00:00'))
+            dt_et = dt_utc.astimezone(ZoneInfo('America/New_York'))
 
-        if num_labels > 1:
-            # 均匀分布标签（确保首尾都有）
-            label_indices = [int(i * (len(sampled_klines) - 1) / (num_labels - 1)) for i in range(num_labels)]
+            if use_date_hour_format:
+                return dt_et.strftime('%d %H:%M')
+            elif use_date_format:
+                return dt_et.strftime('%m-%d')
+            else:
+                return dt_et.strftime('%H:%M')
+
+        # 先在最右侧放置结束时间（确保显示）
+        if len(sampled_klines) > 0:
+            last_time_str = format_time_label(sampled_klines[-1]['datetime'])
+            end_x = width - len(last_time_str)
+            if end_x > x_offset:
+                for j, char in enumerate(last_time_str):
+                    if end_x + j < width:
+                        time_labels[end_x + j] = char
+
+        # 然后放置其他标签
+        if use_date_hour_format:
+            label_width = 9
+        elif use_date_format:
+            label_width = 7
         else:
-            label_indices = [0]
+            label_width = 7
 
-        last_label_end_pos = -100  # 上一个标签的结束位置
+        max_possible_labels = max(4, (width - x_offset - 10) // label_width)  # 右侧留10个字符给结束时间
+        num_labels = min(max_possible_labels, len(sampled_klines) - 1, 10)  # 不包括最后一个（已放置）
 
-        for idx in label_indices:
-            if idx < len(sampled_klines):
-                kline = sampled_klines[idx]
+        if num_labels > 0:
+            label_indices = [int(i * (len(sampled_klines) - 1) / num_labels) for i in range(num_labels)]
 
-                # 根据时间跨度选择标签格式
-                if use_date_format:
-                    # 长时间跨度：显示月-日
-                    time_str = kline['datetime'][5:10]  # 格式: MM-DD
-                else:
-                    # 短时间跨度：显示时:分
-                    time_str = kline['datetime'][11:16]  # 格式: HH:MM
+            for idx in label_indices:
+                if idx < len(sampled_klines):
+                    kline = sampled_klines[idx]
+                    time_str = format_time_label(kline['datetime'])
+                    x_pos = x_offset + int(idx * x_step)
 
-                x_pos = x_offset + idx * x_step
-
-                # 确保标签不越界，且与上一个标签有足够间隔
-                if x_pos + len(time_str) <= width and x_pos >= last_label_end_pos + 2:
-                    # 检查该位置是否已被占用
-                    can_place = all(time_labels[x_pos + i] == ' ' for i in range(len(time_str)) if x_pos + i < width)
-                    if can_place:
-                        for i, char in enumerate(time_str):
-                            if x_pos + i < width:
-                                time_labels[x_pos + i] = char
-                        last_label_end_pos = x_pos + len(time_str)
+                    # 确保不与已有标签重叠
+                    if x_pos + len(time_str) < width - 10:  # 不与右侧结束时间冲突
+                        can_place = all(time_labels[x_pos + j] == ' ' for j in range(len(time_str)) if x_pos + j < width)
+                        if can_place:
+                            for j, char in enumerate(time_str):
+                                if x_pos + j < width:
+                                    time_labels[x_pos + j] = char
 
         lines.append(''.join(time_labels))
 

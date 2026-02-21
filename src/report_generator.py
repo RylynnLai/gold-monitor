@@ -2,6 +2,7 @@ import logging
 from typing import Dict, Optional
 from datetime import datetime
 from price_analyzer import TrendDirection
+from trendline_analyzer import TrendDirection as TrendlineTrendDirection
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +126,194 @@ class ReportGenerator:
         lines.append("═" * 50)
 
         return '\n'.join(lines)
+
+    def generate_trendline_report(
+        self,
+        price_info: Dict,
+        analysis_result: Optional[Dict],
+        analyzer
+    ) -> str:
+        """
+        生成趋势线分析报告
+
+        Args:
+            price_info: 当前价格信息
+            analysis_result: 趋势线分析结果（可为 None）
+            analyzer: TrendlineAnalyzer 实例
+
+        Returns:
+            格式化的报告文本
+        """
+        lines = []
+
+        # 标题
+        lines.append("═" * 50)
+        lines.append("黄金交易分析报告（趋势线模式）".center(46))
+        lines.append("═" * 50)
+        lines.append("")
+
+        # 1. 即时行情
+        lines.append("【即时行情】")
+        lines.append(f"  品种名称: {price_info.get('name', 'AU期货')}")
+        lines.append(f"  当前价格: {price_info['price']:.2f} 元/克")
+        lines.append(f"  今日开盘: {price_info.get('open', 0):.2f} 元/克")
+        lines.append(f"  最高价格: {price_info.get('high', 0):.2f} 元/克")
+        lines.append(f"  最低价格: {price_info.get('low', 0):.2f} 元/克")
+
+        change = price_info.get('change', 0)
+        change_pct = price_info.get('change_percent', 0)
+        lines.append(f"  涨跌额:   {change:+.2f} 元")
+        lines.append(f"  涨跌幅:   {change_pct:+.2f}%")
+        lines.append("")
+
+        # 2. 趋势线分析
+        lines.append("【趋势线分析】")
+        if analysis_result and analysis_result.get('type') == 'TRENDLINE_BREAKOUT':
+            # 趋势线突破分析
+            reversal_type = analysis_result['reversal_type']
+            from_trend = analysis_result['from_trend']
+            to_trend = analysis_result['to_trend']
+            breakout_price = analysis_result['breakout_price']
+            trendline_value = analysis_result['trendline_value']
+            breakout_percent = analysis_result['breakout_percent']
+            pivot_count = analysis_result['pivot_points_count']
+            confidence = analysis_result['confidence']
+
+            reversal_icon = "↗" if '看涨' in reversal_type else "↘"
+            lines.append(f"  检测结果: {reversal_type} {reversal_icon}")
+            lines.append(f"  趋势变化: {from_trend.value} → {to_trend.value}")
+            lines.append(f"  突破价格: {breakout_price:.2f} 元/克")
+            lines.append(f"  趋势线值: {trendline_value:.2f} 元/克")
+            lines.append(f"  突破幅度: {breakout_percent:.2f}%")
+            lines.append(f"  摆动点数: {pivot_count} 个")
+            lines.append(f"  置信度:   {confidence:.1%}")
+        else:
+            # 未检测到突破，显示当前趋势状态
+            trend_info = analyzer.get_current_trend_info()
+            current_trend = trend_info['trend']
+            trendline_value = trend_info['trendline_value']
+
+            # 趋势图标
+            if current_trend == TrendlineTrendDirection.RISING:
+                icon = "↗"
+                trend_desc = "上升趋势"
+            elif current_trend == TrendlineTrendDirection.FALLING:
+                icon = "↘"
+                trend_desc = "下降趋势"
+            else:
+                icon = "→"
+                trend_desc = "震荡行情"
+
+            lines.append(f"  当前趋势: {trend_desc} {icon}")
+            if trendline_value:
+                lines.append(f"  趋势线值: {trendline_value:.2f} 元/克")
+                # 计算当前价格与趋势线的距离
+                distance_percent = abs(price_info['price'] - trendline_value) / trendline_value * 100
+                lines.append(f"  距趋势线: {distance_percent:.2f}%")
+
+                # 计算并显示反转阈值价格
+                if current_trend == TrendlineTrendDirection.RISING:
+                    # 上升趋势中，向下突破的阈值价格
+                    reversal_price = trendline_value * (1 - analyzer.breakout_threshold)
+                    lines.append(f"  反转阈值: {reversal_price:.2f} 元/克 (向下突破)")
+                elif current_trend == TrendlineTrendDirection.FALLING:
+                    # 下降趋势中，向上突破的阈值价格
+                    reversal_price = trendline_value * (1 + analyzer.breakout_threshold)
+                    lines.append(f"  反转阈值: {reversal_price:.2f} 元/克 (向上突破)")
+            else:
+                lines.append(f"  趋势线值: 尚未建立")
+            lines.append(f"  检测结果: 未检测到趋势线突破")
+        lines.append("")
+
+        # 3. 交易建议
+        lines.append("【交易建议】")
+        suggestion = self._generate_trendline_suggestion(price_info, analysis_result)
+        lines.append(f"  操作建议: {suggestion['action']}")
+        lines.append(f"  理由:     {suggestion['reason']}")
+        lines.append(f"  风险等级: {suggestion['risk']}")
+        lines.append("")
+
+        # 4. 系统参数
+        lines.append("【系统参数】")
+        lines.append(f"  趋势窗口: {analyzer.trend_window_hours} 小时")
+        lines.append(f"  突破阈值: {analyzer.breakout_threshold * 100:.2f}%")
+        lines.append(f"  最小摆动: {analyzer.min_pivot_distance} 个K线")
+        lines.append("")
+
+        # 5. 底部信息
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        lines.append(f"运行时间: {current_time}")
+        lines.append("═" * 50)
+
+        return '\n'.join(lines)
+
+    def _generate_trendline_suggestion(
+        self,
+        price_info: Dict,
+        analysis_result: Optional[Dict]
+    ) -> Dict[str, str]:
+        """
+        生成趋势线交易建议
+
+        Returns:
+            {
+                'action': str,  # 操作建议
+                'reason': str,  # 理由
+                'risk': str     # 风险等级
+            }
+        """
+        if not analysis_result or analysis_result.get('type') != 'TRENDLINE_BREAKOUT':
+            return {
+                'action': '持有观望',
+                'reason': '未检测到趋势线突破，建议等待清晰信号',
+                'risk': '低'
+            }
+
+        reversal_type = analysis_result['reversal_type']
+        confidence = analysis_result['confidence']
+        breakout_percent = analysis_result['breakout_percent']
+
+        # 看涨反转
+        if '看涨' in reversal_type:
+            if confidence >= 0.6 and breakout_percent >= 0.1:
+                return {
+                    'action': '强烈建议买入',
+                    'reason': f'趋势线向上突破，信号强烈（置信度{confidence:.1%}，突破{breakout_percent:.2f}%）',
+                    'risk': '中'
+                }
+            elif confidence >= 0.4:
+                return {
+                    'action': '建议买入',
+                    'reason': f'趋势线向上突破，可小仓位试探（置信度{confidence:.1%}）',
+                    'risk': '中'
+                }
+            else:
+                return {
+                    'action': '谨慎观望',
+                    'reason': f'反转信号较弱（置信度{confidence:.1%}），等待进一步确认',
+                    'risk': '低'
+                }
+
+        # 看跌反转
+        else:
+            if confidence >= 0.6 and breakout_percent >= 0.1:
+                return {
+                    'action': '强烈建议卖出',
+                    'reason': f'趋势线向下突破，风险较高（置信度{confidence:.1%}，突破{breakout_percent:.2f}%）',
+                    'risk': '高'
+                }
+            elif confidence >= 0.4:
+                return {
+                    'action': '建议卖出',
+                    'reason': f'趋势线向下突破，建议减仓（置信度{confidence:.1%}）',
+                    'risk': '高'
+                }
+            else:
+                return {
+                    'action': '谨慎观望',
+                    'reason': f'反转信号较弱（置信度{confidence:.1%}），继续观察',
+                    'risk': '中'
+                }
 
     def _generate_suggestion(
         self,
